@@ -58,21 +58,46 @@ router.post("/api/vehiculos", async (req, res) => {
   }
 });
 
-// obtener recuento de pasajeros (legitimos y fraude) por dia
-// retorna un objeto con formato
-// {name: dd/mm, pasajeros: 0}
+// Obtener recuento de pasajeros que ingresaron (legitimos adelante y fraude atras)
+// Si se llama como /api/vehiculos/wtn000, retorna los datos de la buseta con id wtn000
+// Si se llama como /api/vehiculos/todos, retorna la suma de los pasajeros en TODOS los vehiculos
+// Retorna un objeto con formato
+// {name: dd/mm, pasajerosAdelante: 0, pasajerosAtras: 0}
 router.get("/api/vehiculos/:id", async (req, res) => {
   try {
-    // get full vehicule's data
-    const doc = db.collection("vehiculos").doc(req.params.id);
-    const item = await doc.get();
-    const vehiculo = item.data();
+    let pasajerosAdelante = "";
+    let pasajerosAtras = "";
     res.set("Access-Control-Allow-Origin", "*");
 
-    // getting entering passengers from front and back doors
-    console.log(vehiculo);
-    const pasajerosAdelante = getPasajerosPorFecha(vehiculo.adelante.entradas);
-    const pasajerosAtras = getPasajerosPorFecha(vehiculo.atras.entradas);
+    if (req.params.id === "todos") {
+      console.log("getting passenger count in all vehicules");
+      // get all vehicules' data
+      const query = db.collection("vehiculos");
+      const querySnapshot = await query.get();
+      const entradasAdelante = [];
+      const entradasAtras = [];
+      querySnapshot.docs.forEach((vehiculo) => {
+        entradasAdelante.push(...vehiculo.data().adelante.entradas);
+        entradasAtras.push(...vehiculo.data().atras.entradas);
+      });
+      // getting entering passengers from front and back doors
+      pasajerosAdelante = getPasajerosPorFecha(entradasAdelante);
+      pasajerosAtras = getPasajerosPorFecha(entradasAtras);
+    } else {
+      // get one vehicule's data
+      console.log(
+        "getting passenger count for the vehicule with id: " +
+          req.params.id +
+          "..."
+      );
+      const doc = db.collection("vehiculos").doc(req.params.id);
+      const item = await doc.get();
+      const vehiculo = item.data();
+
+      // getting entering passengers from front and back doors
+      pasajerosAdelante = getPasajerosPorFecha(vehiculo.adelante.entradas);
+      pasajerosAtras = getPasajerosPorFecha(vehiculo.atras.entradas);
+    }
     const objeto = {pasajerosAdelante, pasajerosAtras};
     return res.status(200).json(objeto);
   } catch (error) {
@@ -81,7 +106,7 @@ router.get("/api/vehiculos/:id", async (req, res) => {
   }
 });
 
-// obtener solo los id de las busetas registradas
+// Obtener una lista de los id de las busetas registradas (para dropdown y reportes)
 router.get("/api/vehiculos", async (req, res) => {
   try {
     const query = db.collection("vehiculos");
@@ -104,16 +129,29 @@ router.get("/api/vehiculos", async (req, res) => {
 //   "sensor":"atras",
 //   "tipoRegistro":"salidas",
 //   "registro": "17 de enero de 2022, 00:00:00 UTC-5"
+//   "urlFoto": "https://storage.googleapis.com/cipasajeros.appspot.com/puertaatras02.png"   <--- solo se lee cuando sensor=atras y tipoRegistro=entradas
 // }
 router.put("/api/vehiculos/:id", async (req, res) => {
   try {
     const doc = db.collection("vehiculos").doc(req.params.id);
     const tipoDeRegistro = `${req.body.sensor}.${req.body.tipoRegistro}`;
-    const unionRes = await doc.update({
-      [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
-        req.body.registro
-      ),
-    });
+    let unionRes = "";
+
+    if (tipoRegistro === "atras.entradas") {
+      unionRes = await doc.update({
+        [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
+          req.body.registro
+        ),
+        [atras.fotos]: admin.firestore.FieldValue.arrayUnion(req.body.urlFoto),
+      });
+    } else {
+      unionRes = await doc.update({
+        [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
+          req.body.registro
+        ),
+      });
+    }
+
     console.log(unionRes);
     return res
       .status(200)
