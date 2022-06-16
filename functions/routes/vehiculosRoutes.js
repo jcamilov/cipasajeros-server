@@ -58,7 +58,7 @@ router.post("/api/vehiculos", async (req, res) => {
   }
 });
 
-// Obtener recuento de pasajeros que ingresaron (legitimos adelante y fraude atras)
+// Obtener conteo de pasajeros que ingresaron (legitimos adelante y fraude atras)
 // Si se llama como /api/vehiculos/wtn000, retorna los datos de la buseta con id wtn000
 // Si se llama como /api/vehiculos/todos, retorna la suma de los pasajeros en TODOS los vehiculos
 // Retorna un objeto con formato
@@ -123,6 +123,63 @@ router.get("/api/vehiculos", async (req, res) => {
   }
 });
 
+// Obtener número de pasajeros que en circulación en este momento
+// Si se llama como /api/live/wtn000, retorna los pasajeros en la buseta con id wtn000
+// Si se llama como /api/live/todos, retorna la suma de los pasajeros en TODOS los vehiculos en este momento
+// Retorna un entero
+// En el body debe contener la fecha UTC con hora 00:00 { 'fecha' : 3272382837 }
+router.get("/api/live/:id", async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  try {
+    const lowerLimit = req.body.fecha;
+    const upperLimit = req.body.fecha + 86400; // 86400 seconds = 1 day
+    const entradasAdelante = [];
+    let counter = 0;
+
+    if (req.params.id === "todos") {
+      console.log("passengers of a specific date, entrance from front door");
+      // get all vehicules' data
+      const query = db.collection("vehiculos");
+      const querySnapshot = await query.get();
+      querySnapshot.docs.forEach((vehiculo) => {
+        vehiculo.data().adelante.entradas.forEach((entrada) => {
+          console.log(parseInt(entrada));
+          if (
+            parseInt(entrada) >= lowerLimit &&
+            parseInt(entrada) <= upperLimit
+          ) {
+            counter++;
+            entradasAdelante.push(entrada);
+          }
+        });
+      });
+    } else {
+      // get one vehicule's data
+      console.log(
+        "getting passenger count for the vehicule with id: " +
+          req.params.id +
+          "..."
+      );
+      const doc = db.collection("vehiculos").doc(req.params.id);
+      const vehiculo = await doc.get();
+      vehiculo.data().adelante.entradas.forEach((entrada) => {
+        if (
+          parseInt(entrada) >= lowerLimit &&
+          parseInt(entrada) <= upperLimit
+        ) {
+          counter++;
+          entradasAdelante.push(...vehiculo.data().adelante.entradas);
+        }
+      });
+    }
+    const objeto = {counter, entradasAdelante};
+    return res.status(200).json(objeto);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
 // agregar entrada o salida (lo hace cada google dev board en cada puerta)
 // Usar este formato como body:
 // {
@@ -137,14 +194,18 @@ router.put("/api/vehiculos/:id", async (req, res) => {
     const tipoDeRegistro = `${req.body.sensor}.${req.body.tipoRegistro}`;
     let unionRes = "";
 
-    if (tipoRegistro === "atras.entradas") {
+    if (tipoDeRegistro === "atras.entradas") {
+      console.log("es entrada atras");
       unionRes = await doc.update({
         [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
           req.body.registro
         ),
-        [atras.fotos]: admin.firestore.FieldValue.arrayUnion(req.body.urlFoto),
+        ["atras.fotos"]: admin.firestore.FieldValue.arrayUnion(
+          req.body.urlFoto
+        ),
       });
     } else {
+      console.log("no es entrada atras");
       unionRes = await doc.update({
         [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
           req.body.registro
