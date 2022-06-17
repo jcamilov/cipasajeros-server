@@ -10,8 +10,7 @@ const admin = require("firebase-admin");
 const db = admin.firestore();
 
 // Funcion de ayuda que recibe un array con fechas UTC y devuelve
-// un arreglo de objetos con la forma [{fecha: dd/mm, pasajeros: 0},...]
-// para ser graficados facilmente
+// un arreglo de objetos con la forma [{fecha: dd/mm, pasajeros: 0},...] para ser graficados facilmente
 const getPasajerosPorFecha = (registros) => {
   const pasajeros = [];
   registros.forEach((entrada) => {
@@ -24,6 +23,24 @@ const getPasajerosPorFecha = (registros) => {
     // if date doesn't exist, add it to the array'
     if (index === -1) {
       pasajeros.push({fecha: dayMonth, pasajeros: 0});
+      index = pasajeros.length - 1;
+    }
+    // increment count
+    pasajeros[index].pasajeros++;
+  });
+  return pasajeros;
+};
+
+// Funcion de ayuda que recibe un array con fechas UTC y devuelve
+// un arreglo de objetos con la forma [{fecha: hora, pasajeros: 0},...] para ser graficados facilmente
+const getPasajerosPorHora = (registros) => {
+  const pasajeros = [];
+  registros.forEach((entrada) => {
+    const hora = new Date(entrada * 1000).getUTCHours();
+    let index = pasajeros.findIndex((el) => el.hora === hora);
+    // if date doesn't exist, add it to the array'
+    if (index === -1) {
+      pasajeros.push({hora: hora, pasajeros: 0});
       index = pasajeros.length - 1;
     }
     // increment count
@@ -58,12 +75,12 @@ router.post("/api/vehiculos", async (req, res) => {
   }
 });
 
-// Obtener conteo de pasajeros que ingresaron (legitimos adelante y fraude atras)
+// Obtener conteo historico de pasajeros que ingresaron (legitimos adelante y fraude atras)
 // Si se llama como /api/vehiculos/wtn000, retorna los datos de la buseta con id wtn000
 // Si se llama como /api/vehiculos/todos, retorna la suma de los pasajeros en TODOS los vehiculos
 // Retorna un objeto con formato
 // {name: dd/mm, pasajerosAdelante: 0, pasajerosAtras: 0}
-router.get("/api/vehiculos/:id", async (req, res) => {
+router.get("/api/historico/:id", async (req, res) => {
   try {
     let pasajerosAdelante = "";
     let pasajerosAtras = "";
@@ -123,33 +140,57 @@ router.get("/api/vehiculos", async (req, res) => {
   }
 });
 
-// Obtener número de pasajeros que en circulación en este momento
-// Si se llama como /api/live/wtn000, retorna los pasajeros en la buseta con id wtn000
-// Si se llama como /api/live/todos, retorna la suma de los pasajeros en TODOS los vehiculos en este momento
-// Retorna un entero
-// En el body debe contener la fecha UTC con hora 00:00 { 'fecha' : 3272382837 }
-router.get("/api/live/:id", async (req, res) => {
+// Obtener número de pasajeros que en circulación para un día específico por hora (normalmente hoy)
+// Query params: "id" que toma el id de la buseta o el valor "todos". "fecha" en formato epoch (debe ser a las 00:00 horas del día a consultar).
+// Retorna:
+// {"countEntradasAdelante": 18,
+//   "countEntradasAtras": 9,
+//   "countSalidas": 18,
+//   "pasajerosEntranPorHora":[{"hora": 4,"pasajeros": 5 },{},...],
+//   "pasajerosSalenPorHora":[{"hora": 4,"pasajeros": 5 },{},...]}
+router.get("/api/pasajeros", async (req, res) => {
   res.set("Access-Control-Allow-Origin", "*");
-  try {
-    const lowerLimit = req.body.fecha;
-    const upperLimit = req.body.fecha + 86400; // 86400 seconds = 1 day
-    const entradasAdelante = [];
-    let counter = 0;
+  // return res.status(200).send("probando");
+  if (!req.query.fecha) return res.status(500).send("no se ingesó una fecha");
+  let pasajerosAdelante = "";
+  let pasajerosAtras = "";
 
-    if (req.params.id === "todos") {
+  try {
+    const lowerLimit = parseInt(req.query.fecha);
+    console.log(typeof lowerLimit);
+    const upperLimit = lowerLimit + 86400; // 86400 seconds = 1 day
+    let countEntradasAdelante = 0;
+    let countEntradasAtras = 0;
+    let countSalidas = 0;
+    const entradas = [];
+    const salidas = [];
+
+    if (req.query.id === "todos") {
       console.log("passengers of a specific date, entrance from front door");
       // get all vehicules' data
       const query = db.collection("vehiculos");
       const querySnapshot = await query.get();
+
       querySnapshot.docs.forEach((vehiculo) => {
+        // entradas adelante
         vehiculo.data().adelante.entradas.forEach((entrada) => {
-          console.log(parseInt(entrada));
-          if (
-            parseInt(entrada) >= lowerLimit &&
-            parseInt(entrada) <= upperLimit
-          ) {
-            counter++;
-            entradasAdelante.push(entrada);
+          if (entrada >= lowerLimit && entrada <= upperLimit) {
+            countEntradasAdelante++;
+            entradas.push(entrada);
+          }
+        });
+        // entradas atras
+        vehiculo.data().atras.entradas.forEach((entrada) => {
+          if (entrada >= lowerLimit && entrada <= upperLimit) {
+            countEntradasAtras++;
+            entradas.push(entrada);
+          }
+        });
+        // salidas
+        vehiculo.data().atras.salidas.forEach((entrada) => {
+          if (entrada >= lowerLimit && entrada <= upperLimit) {
+            countSalidas++;
+            salidas.push(entrada);
           }
         });
       });
@@ -157,22 +198,44 @@ router.get("/api/live/:id", async (req, res) => {
       // get one vehicule's data
       console.log(
         "getting passenger count for the vehicule with id: " +
-          req.params.id +
+          req.query.id +
           "..."
       );
-      const doc = db.collection("vehiculos").doc(req.params.id);
+      const doc = db.collection("vehiculos").doc(req.query.id);
       const vehiculo = await doc.get();
+      // Entradas adelante
       vehiculo.data().adelante.entradas.forEach((entrada) => {
-        if (
-          parseInt(entrada) >= lowerLimit &&
-          parseInt(entrada) <= upperLimit
-        ) {
-          counter++;
-          entradasAdelante.push(...vehiculo.data().adelante.entradas);
+        if (entrada >= lowerLimit && entrada <= upperLimit) {
+          countEntradasAdelante++;
+          entradas.push(entrada);
+        }
+      });
+      // Entradas atras
+      vehiculo.data().atras.entradas.forEach((entrada) => {
+        if (entrada >= lowerLimit && entrada <= upperLimit) {
+          countEntradasAtras++;
+          entradas.push(entrada);
+        }
+      });
+      // Salidas
+      vehiculo.data().atras.salidas.forEach((entrada) => {
+        if (entrada >= lowerLimit && entrada <= upperLimit) {
+          countSalidas++;
+          salidas.push(entrada);
         }
       });
     }
-    const objeto = {counter, entradasAdelante};
+    // getting array of entering and exiting passengers per hour
+    const pasajerosEntranPorHora = getPasajerosPorHora(entradas);
+    const pasajerosSalenPorHora = getPasajerosPorHora(salidas);
+
+    const objeto = {
+      countEntradasAdelante,
+      countEntradasAtras,
+      countSalidas,
+      pasajerosEntranPorHora,
+      pasajerosSalenPorHora,
+    };
     return res.status(200).json(objeto);
   } catch (error) {
     console.log(error);
