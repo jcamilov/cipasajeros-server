@@ -1,8 +1,3 @@
-// POR HACER
-// - endpoint que devuelva los pasajeros en circulacion en tiempo real
-// (toma todas las entradas y salidas del dia actual en todos los vehiculos y las resta. Devuelve conteo)
-// - todo el tema de las fotos y firestorage
-
 const {Router} = require("express");
 const router = Router();
 const admin = require("firebase-admin");
@@ -140,20 +135,19 @@ router.get("/api/vehiculos", async (req, res) => {
   }
 });
 
-// Obtener número de pasajeros que en circulación para un día específico por hora (normalmente hoy)
+// Obtener número de pasajeros en circulación para un día específico por hora (normalmente hoy)
 // Query params: "id" que toma el id de la buseta o el valor "todos". "fecha" en formato epoch (debe ser a las 00:00 horas del día a consultar).
 // Retorna:
 // {"countEntradasAdelante": 18,
 //   "countEntradasAtras": 9,
 //   "countSalidas": 18,
 //   "pasajerosEntranPorHora":[{"hora": 4,"pasajeros": 5 },{},...],
-//   "pasajerosSalenPorHora":[{"hora": 4,"pasajeros": 5 },{},...]}
+//   "pasajerosSalenPorHora":[{"hora": 4,"pasajeros": 5 },{},...],
+//   "fotosEntradasAtras":["urlFoto":"http://...."]}
 router.get("/api/pasajeros", async (req, res) => {
   res.set("Access-Control-Allow-Origin", "*");
   // return res.status(200).send("probando");
   if (!req.query.fecha) return res.status(500).send("no se ingesó una fecha");
-  let pasajerosAdelante = "";
-  let pasajerosAtras = "";
 
   try {
     const lowerLimit = parseInt(req.query.fecha);
@@ -237,6 +231,65 @@ router.get("/api/pasajeros", async (req, res) => {
       pasajerosSalenPorHora,
     };
     return res.status(200).json(objeto);
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send(error);
+  }
+});
+
+// Obtener la lista de urls a las fotos de ingresos no autorizados en un día en un vehículo específico
+// Retorna array: [{"vehiculo":"WTN000","timestamp": 4353634544, "urlFoto":"http://...."},[{...}],...]
+router.get("/api/noautorizados", async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  if (!req.query.fecha) return res.status(500).send("no se ingesó una fecha");
+
+  try {
+    const lowerLimit = parseInt(req.query.fecha);
+    console.log(typeof lowerLimit);
+    const upperLimit = lowerLimit + 86400; // 86400 seconds = 1 day
+    let noAutoriados = [];
+
+    if (req.query.id === "todos") {
+      console.log("passengers of a specific date, entrance from back door");
+      // get all vehicules' data
+      const query = db.collection("vehiculos");
+      const querySnapshot = await query.get();
+
+      querySnapshot.docs.forEach((vehiculo) => {
+        vehiculo.data().atras.fotos.forEach((url) => {
+          const tempArr = url.split("/");
+          const timestamp = tempArr[tempArr.length - 1].slice(0, -4); // the name of the file is the timestamp
+          if (timestamp >= lowerLimit && timestamp <= upperLimit) {
+            noAutoriados.push({
+              vehiculo: vehiculo.id,
+              timestamp: parseInt(timestamp),
+              urlFoto: url,
+            });
+          }
+        });
+      });
+    } else {
+      // get one vehicule's data
+      console.log(
+        "getting passenger count for the vehicule with id: " +
+          req.query.id +
+          "..."
+      );
+      const doc = db.collection("vehiculos").doc(req.query.id);
+      const vehiculo = await doc.get();
+      vehiculo.data().atras.fotos.forEach((url) => {
+        const tempArr = url.split("/");
+        const timestamp = tempArr[tempArr.length - 1].slice(0, -4); // the name of the file is the timestamp
+        if (timestamp >= lowerLimit && timestamp <= upperLimit) {
+          noAutoriados.push({
+            vehiculo: vehiculo.id,
+            timestamp: parseInt(timestamp),
+            urlFoto: url,
+          });
+        }
+      });
+    }
+    return res.status(200).json(noAutoriados);
   } catch (error) {
     console.log(error);
     return res.status(500).send(error);
