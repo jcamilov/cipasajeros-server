@@ -314,7 +314,7 @@ router.put("/api/vehiculos/:id", async (req, res) => {
       console.log("es entrada atras");
       unionRes = await doc.update({
         [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
-          req.body.registro
+          parseInt(req.body.registro)
         ),
         ["atras.fotos"]: admin.firestore.FieldValue.arrayUnion(
           req.body.urlFoto
@@ -324,7 +324,7 @@ router.put("/api/vehiculos/:id", async (req, res) => {
       console.log("no es entrada atras");
       unionRes = await doc.update({
         [tipoDeRegistro]: admin.firestore.FieldValue.arrayUnion(
-          req.body.registro
+          parseInt(req.body.registro)
         ),
       });
     }
