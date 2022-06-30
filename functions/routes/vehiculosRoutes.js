@@ -1,8 +1,61 @@
 const {Router} = require("express");
 const router = Router();
 const admin = require("firebase-admin");
+const uuid = require("uuid");
 
 const db = admin.firestore();
+const bucket = admin.storage().bucket();
+
+const multer = require("multer");
+var storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads");
+  },
+  filename: function (req, file, cb) {
+    cb(null, file.fieldname + "-" + Date.now());
+  },
+});
+var upload = multer({storage: storage});
+
+router.post("/api/upload", upload.single("foto"), async (req, res, next) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      const error = new Error("no file uploaded");
+      error.httpStatusCode = 400;
+      return next(error);
+    }
+    res.send(file);
+
+    // const token = uuid.v4();
+    // const fileName =
+    //   "/home/jotac/cipasajeros/cpserver/functions/routes/0cool.jpg";
+
+    // const data = await bucket.upload(fileName, {
+    //   uploadType: "media",
+    //   metadata: {
+    //     contentType: "image/png",
+    //     metadata: {
+    //       firebaseStorageDownloadTokens: token,
+    //     },
+    //   },
+    // });
+    // console.log("the token: " + token);
+    // const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/cipasajeros.appspot.com/o/${encodeURIComponent(
+    //   data[0].name
+    // )}?alt=media&token=${token}`;
+    // console.log("here is the link:");
+    // console.log(downloadUrl);
+    // return res.status(200).json(downloadUrl);
+
+    // if (!files) {
+    //   res.send("File was not found");
+    // }
+  } catch (error) {
+    console.log(error);
+    res.status(500).send(error);
+  }
+});
 
 // Funcion de ayuda que recibe un array con fechas UTC y devuelve
 // un arreglo de objetos con la forma [{fecha: dd/mm, pasajeros: 0},...] para ser graficados facilmente
@@ -31,7 +84,8 @@ const getPasajerosPorFecha = (registros) => {
 const getPasajerosPorHora = (registros) => {
   const pasajeros = [];
   registros.forEach((entrada) => {
-    const hora = new Date(entrada * 1000).getUTCHours();
+    const d = new Date(entrada * 1000);
+    const hora = d.getHours();
     let index = pasajeros.findIndex((el) => el.hora === hora);
     // if date doesn't exist, add it to the array'
     if (index === -1) {
@@ -121,13 +175,13 @@ router.get("/api/historico/:id", async (req, res) => {
 // Obtener una lista de los id de las busetas registradas (para dropdown y reportes)
 router.get("/api/vehiculos", async (req, res) => {
   try {
+    res.set("Access-Control-Allow-Origin", "*");
     const query = db.collection("vehiculos");
     const querySnapshot = await query.get();
 
     const vehiculos = querySnapshot.docs.map((doc) => ({
       id: doc.id,
     }));
-    res.set("Access-Control-Allow-Origin", "*");
     return res.status(200).send(vehiculos);
   } catch (error) {
     console.log(error);
@@ -190,10 +244,13 @@ router.get("/api/pasajeros", async (req, res) => {
       });
     } else {
       // get one vehicule's data
+      const d = new Date(0);
+      d.setSeconds(lowerLimit);
       console.log(
         "getting passenger count for the vehicule with id: " +
           req.query.id +
-          "..."
+          " on the date " +
+          d.toLocaleString()
       );
       const doc = db.collection("vehiculos").doc(req.query.id);
       const vehiculo = await doc.get();
@@ -245,7 +302,7 @@ router.get("/api/noautorizados", async (req, res) => {
 
   try {
     const lowerLimit = parseInt(req.query.fecha);
-    console.log(typeof lowerLimit);
+    console.log(lowerLimit);
     const upperLimit = lowerLimit + 86400; // 86400 seconds = 1 day
     let noAutoriados = [];
 
@@ -270,10 +327,13 @@ router.get("/api/noautorizados", async (req, res) => {
       });
     } else {
       // get one vehicule's data
+      const d = new Date(0);
+      d.setSeconds(lowerLimit);
       console.log(
-        "getting passenger count for the vehicule with id: " +
+        "getting FRAUDS for the vehicule id: " +
           req.query.id +
-          "..."
+          " on the date " +
+          d.toLocaleString()
       );
       const doc = db.collection("vehiculos").doc(req.query.id);
       const vehiculo = await doc.get();
