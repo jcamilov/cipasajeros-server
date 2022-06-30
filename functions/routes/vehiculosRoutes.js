@@ -84,8 +84,11 @@ const getPasajerosPorFecha = (registros) => {
 const getPasajerosPorHora = (registros) => {
   const pasajeros = [];
   registros.forEach((entrada) => {
-    const d = new Date(entrada * 1000);
+    const d = new Date(0);
+    d.setSeconds(entrada - 60 * 60 * 5);
     const hora = d.getHours();
+    console.log("entrada: " + d);
+    console.log("hora: " + hora);
     let index = pasajeros.findIndex((el) => el.hora === hora);
     // if date doesn't exist, add it to the array'
     if (index === -1) {
@@ -205,7 +208,6 @@ router.get("/api/pasajeros", async (req, res) => {
 
   try {
     const lowerLimit = parseInt(req.query.fecha);
-    console.log(typeof lowerLimit);
     const upperLimit = lowerLimit + 86400; // 86400 seconds = 1 day
     let countEntradasAdelante = 0;
     let countEntradasAtras = 0;
@@ -340,6 +342,9 @@ router.get("/api/noautorizados", async (req, res) => {
       vehiculo.data().atras.fotos.forEach((url) => {
         const tempArr = url.split("/");
         const timestamp = tempArr[tempArr.length - 1].slice(0, -4); // the name of the file is the timestamp
+        console.log(
+          `timestamp:${timestamp}, lowerL:${lowerLimit}, upperLimit:${upperLimit}`
+        );
         if (timestamp >= lowerLimit && timestamp <= upperLimit) {
           noAutoriados.push({
             vehiculo: vehiculo.id,
@@ -348,6 +353,7 @@ router.get("/api/noautorizados", async (req, res) => {
           });
         }
       });
+      console.log(noAutoriados);
     }
     return res.status(200).json(noAutoriados);
   } catch (error) {
